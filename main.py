@@ -1,51 +1,31 @@
-import cv2
 import os
 import glob
-import matplotlib.pyplot as plt
-import numpy as np
+import math
+import argparse
 from itertools import product
-from math import log, tan, pi
-import matplotlib
-from sklearn.cluster import KMeans
 
+import cv2
 import boto3
 import botocore
-from botocore import UNSIGNED
-from botocore.config import Config
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.cluster import KMeans
+
+
+parser = argparse.ArgumentParser(description='Data analysis of altitude profile in Europe.')
+parser.add_argument('--zoom', metavar='Z', type=int, default=3, help='Zoom ratio of processed data.')
+parser.add_argument('--decoded-data-path', metavar="D", type=str, help='Path to already decoded data.')
+args = parser.parse_args()
 
 DATA_TYPE = "terrarium"
-BUCKET_NAME = 'elevation-tiles-prod'   # replace with your bucket name
-KEY = DATA_TYPE + '/{z}/{x}/{y}.png'    # replace with your object key
-
-s3 = boto3.resource('s3', config=Config(signature_version=UNSIGNED))
-
 EUROPE_BOUNDS = (71.0, -10.0, 35.0, 56.0)
-ZOOM = 3
+ZOOM = args.zoom
 
 DATA_FOLDER = f"./data/{DATA_TYPE}"
 ZOOM_FOLDER = f"{DATA_FOLDER}/{ZOOM}"
 
-if not os.path.exists(ZOOM_FOLDER):
-    os.makedirs(ZOOM_FOLDER)
-
-def transform_graph_coords_to_tiles(lat, lon, zoom):
-    """
-    Convert latitude, longitude to z/x/y tile coordinate at given zoom.
-    """
-    # convert to radians
-    lon_r, lat_r = lon * pi / 180, lat * pi / 180
-
-    # project to mercator format
-    x_m, y_m = lon_r, log(tan(0.25 * pi + 0.5 * lat_r))
-
-    # transform to tile space
-    tiles, diameter = 2 ** zoom, 2 * pi
-    x, y = int(tiles * (x_m + pi) / diameter), int(tiles * (pi - y_m) / diameter)
-
-    return zoom, x, y
-
-
-def get_tiles(zoom, lat1, lon1, lat2, lon2):
+def generate_tiles_from_graph_coordinates(zoom, lat1, lon1, lat2, lon2):
     """
     Convert geographic bounds into a list of tile coordinates at given zoom.
     """
@@ -63,31 +43,35 @@ def get_tiles(zoom, lat1, lon1, lat2, lon2):
 
     return tiles
 
+def transform_graph_coords_to_tiles(lat, lon, zoom):
+    """
+    Convert latitude, longitude to z/x/y tile coordinate at given zoom.
+    """
+    # convert to radians
+    lon_r, lat_r = lon * math.pi / 180, lat * math.pi / 180
 
-def download(tiles):
-    try:
-        for i, (z, x, y) in enumerate(tiles):
-            column_folder = f"{ZOOM_FOLDER}/{x}"
-            if not os.path.exists(column_folder):
-                os.mkdir(column_folder)
-                print("Downloading " + str(i+1) + "/" + str(len(tiles)))
-                url = KEY.format(z=z, x=x, y=y)
-                s3.Bucket(BUCKET_NAME).download_file(url, './{}//{}//{}.png'.format(ZOOM_FOLDER, x, y))
+    # project to mercator format
+    x_m, y_m = lon_r, math.log(math.tan(0.25 * math.pi + 0.5 * lat_r))
 
-    except botocore.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == "404":
-            print("The object does not exist.")
-        else:
-            raise
+    # transform to tile space
+    tiles, diameter = 2 ** zoom, 2 * math.pi
+    x, y = int(tiles * (x_m + math.pi) / diameter), int(tiles * (math.pi - y_m) / diameter)
 
-    except Exception as ex:
-        print("Exception occurred: " + str(ex))
+    return zoom, x, y
 
-def save_decoded_img(c, r, img):
-    decoded_folder = f"./data/{DATA_TYPE}_decoded/{ZOOM}/{c}"
-    if not os.path.exists(decoded_folder):
-        os.makedirs(decoded_folder)
-    plt.imsave(f"{decoded_folder}/{r}.png", img, cmap='terrain')
+def download_tiles(tiles):
+    BUCKET_NAME = 'elevation-tiles-prod'
+    KEY = DATA_TYPE + '/{z}/{x}/{y}.png'
+    s3 = boto3.resource('s3', config=botocore.config.Config(signature_version=botocore.UNSIGNED))
+    for i, (z, x, y) in enumerate(tiles):
+        column_folder = f"{ZOOM_FOLDER}/{x}"
+        if not os.path.exists(column_folder):
+            os.mkdir(column_folder)
+        img_path = f'./{ZOOM_FOLDER}/{x}/{y}.png'
+        if not os.path.exists(img_path):
+            print(f"Downloading {i+1}/{len(tiles)} to {img_path}")
+            url = KEY.format(z=z, x=x, y=y)
+            s3.Bucket(BUCKET_NAME).download_file(url, img_path)
 
 def decode_terrain_img(img):
     height_arr = np.zeros(img.shape[:2])
@@ -99,14 +83,20 @@ def decode_terrain_img(img):
     
     return height_arr
 
+def save_decoded_img(c, r, img):
+    decoded_folder = f"./data/{DATA_TYPE}_decoded/{ZOOM}/{c}"
+    if not os.path.exists(decoded_folder):
+        os.makedirs(decoded_folder)
+    plt.imsave(f"{decoded_folder}/{r}.png", img, cmap='terrain')
+
 def concat_vh(list_2d):
     return cv2.hconcat([cv2.vconcat(list_h) for list_h in list_2d]) 
 
 def get_tiles_from_file(decode=True, group=True):
-    column_folder_paths = glob.glob(f"{ZOOM_FOLDER}/*")
+    column_folder_paths = sorted(glob.glob(f"{ZOOM_FOLDER}/*"), key=len)
     imgs = []
     for c, column_folder in enumerate(column_folder_paths):
-        img_paths = glob.glob(f"{column_folder}/*.png")
+        img_paths = sorted(glob.glob(f"{column_folder}/*.png"), key=len)
         column_imgs = []
         for r, img_path in enumerate(img_paths):
             print(f"Reading {(r + c*len(img_paths))} img out of {len(column_folder_paths)**2} imgs from {img_path}")
@@ -119,32 +109,37 @@ def get_tiles_from_file(decode=True, group=True):
     
     if group:
         imgs = concat_vh(imgs)
-        plt.imshow(imgs, cmap='terrain')
-        plt.show()
-    plt.imsave(f"./data/{DATA_TYPE}_decoded/{ZOOM}/data.png", imgs, cmap='terrain')
+        plt.imsave(f"./data/{DATA_TYPE}_decoded/{ZOOM}/data.png", imgs, cmap='terrain')
     return imgs
 
     
 def main():
-    tiles = get_tiles(ZOOM, *EUROPE_BOUNDS)
-    download(tiles)
-    img = get_tiles_from_file(decode=True, group=True)
-    data = np.asarray(img)
-    # np.save(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy', data)
-    # data = np.load(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy')
+    if not args.decoded_data_path:
+        tiles = generate_tiles_from_graph_coordinates(ZOOM, *EUROPE_BOUNDS)
+        download_tiles(tiles)
+        img = get_tiles_from_file(decode=True, group=True)
+        data = np.asarray(img)
+        np.save(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy', data)
+    else:
+        data = np.load(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy')
+
     init_shape = data.shape
-    print(f"Data shape: {data.shape}")
-    data = data.reshape(-1, 1)
-    ### TU MAMY URUCHOMIC PYSPARKA ###
-    'data - 2D image -> txt 0 -> 00, 01'
-    kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data)
+    data_reshaped = data.reshape(-1, 1)
+    print(f"Starting KMeans algorithm for {len(data)} data points...")
+    kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data_reshaped)
+    print("Done!")
+
     labels = kmeans.labels_
-    '-> 1D -> 2D'
     img = labels.reshape(init_shape)
     cluster_centers = kmeans.cluster_centers_.reshape(-1)
+
+    # Plotting results
     cmap = matplotlib.cm.viridis
     bounds = list(range(0, 6))
     norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+    plt.subplot(121)
+    plt.imshow(data, cmap='terrain')
+    plt.subplot(122)
     plt.imshow(img, norm=norm)
     cbar = plt.colorbar()
     cbar.set_ticks([0.5, 1.5, 2.5, 3.5, 4.5, 5.5])
@@ -153,4 +148,7 @@ def main():
     plt.show()
 
 if __name__ == '__main__':
+    if not os.path.exists(ZOOM_FOLDER):
+        os.makedirs(ZOOM_FOLDER)
+    print(f"Starting terrain-tiles data analysis for Europe zoom: {ZOOM}, data type: {DATA_TYPE}")
     main()
