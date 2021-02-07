@@ -153,6 +153,7 @@ def main():
     plt.imshow(data, cmap='terrain')
     plt.subplot(122)
     plt.imshow(img, norm=norm)
+    plt.imsave(f"./data/{DATA_TYPE}_decoded/{ZOOM}/kmeans.png", img, cmap='terrain')
     cbar = plt.colorbar()
     cbar.set_ticks([0.5, 1.5, 2.5, 3.5, 4.5, 5.5])
     cbar.set_ticklabels([0, 1, 2, 3, 4, 5])
