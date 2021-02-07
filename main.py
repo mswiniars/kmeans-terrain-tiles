@@ -115,7 +115,7 @@ def get_tiles_from_file(decode=True, group=True):
         imgs = concat_vh(imgs)
         folder_path_decoded = f"./data/{DATA_TYPE}_decoded/{ZOOM}"
         if not os.path.exists(folder_path_decoded):
-            os.mkdir(folder_path_decoded)
+            os.makedirs(folder_path_decoded)
         plt.imsave(f"{folder_path_decoded}/data.png", imgs, cmap='terrain')
     return imgs
 
