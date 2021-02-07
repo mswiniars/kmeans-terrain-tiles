@@ -134,7 +134,7 @@ def main():
 
     init_shape = data.shape
     data_reshaped = data.reshape(-1, 1)
-    print(f"Starting KMeans algorithm for {len(data)} data points...")
+    print(f"Starting KMeans algorithm for {data.size} data points...")
     kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data_reshaped)
     stop_processing = timer()
     print("Done!")
