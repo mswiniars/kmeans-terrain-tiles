@@ -121,6 +121,7 @@ def main():
         data = np.asarray(img)
         np.save(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy', data)
     else:
+        print("Skipping reading and decoding images!")
         data = np.load(f'./data/{DATA_TYPE}_decoded/{ZOOM}/data.npy')
 
     init_shape = data.shape
