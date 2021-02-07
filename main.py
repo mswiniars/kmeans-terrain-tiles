@@ -78,14 +78,14 @@ def download_tiles(tiles):
             s3.Bucket(BUCKET_NAME).download_file(url, img_path)
 
 def decode_terrain_img(img):
-    height_arr = np.zeros(img.shape[:2])
+    height_profile = np.zeros(img.shape[:2])
     for row in range(img.shape[0]):
         for column in range(img.shape[1]):
             bgr = img[row][column]
             height = (bgr[2] * 256.0 + bgr[1] + bgr[1] / 256.0) - 32768.0
-            height_arr[row][column] = height if height > 0 else 0
+            height_profile[row][column] = height if height > 0 else 0
     
-    return height_arr
+    return height_profile
 
 def save_decoded_img(c, r, img):
     decoded_folder = f"./data/{DATA_TYPE}_decoded/{ZOOM}/{c}"
