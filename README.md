@@ -22,4 +22,4 @@ The measurement system is built as follows:
  | 10 | N/A | TBD |
 
  Example result map for zoom 5:
- ![alt text](https://github.com/mswiniars/results/blob/master/result_5.png?raw=true)
+ ![alt text](https://github.com/mswiniars/kmeans-terrain-tiles/blob/main/results/result_5.pnge)
