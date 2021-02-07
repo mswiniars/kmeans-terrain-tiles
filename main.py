@@ -3,6 +3,7 @@ import glob
 import math
 import argparse
 from itertools import product
+from timeit import default_timer as timer
 
 import cv2
 import boto3
@@ -24,6 +25,8 @@ ZOOM = args.zoom
 
 DATA_FOLDER = f"./data/{DATA_TYPE}"
 ZOOM_FOLDER = f"{DATA_FOLDER}/{ZOOM}"
+
+DOWNLOAD_DATA = False
 
 def generate_tiles_from_graph_coordinates(zoom, lat1, lon1, lat2, lon2):
     """
@@ -70,6 +73,7 @@ def download_tiles(tiles):
         img_path = f'./{ZOOM_FOLDER}/{x}/{y}.png'
         if not os.path.exists(img_path):
             print(f"Downloading {i+1}/{len(tiles)} to {img_path}")
+            DOWNLOAD_DATA = True
             url = KEY.format(z=z, x=x, y=y)
             s3.Bucket(BUCKET_NAME).download_file(url, img_path)
 
@@ -109,11 +113,15 @@ def get_tiles_from_file(decode=True, group=True):
     
     if group:
         imgs = concat_vh(imgs)
-        plt.imsave(f"./data/{DATA_TYPE}_decoded/{ZOOM}/data.png", imgs, cmap='terrain')
+        folder_path_decoded = f"./data/{DATA_TYPE}_decoded/{ZOOM}"
+        if not os.path.exists(folder_path_decoded):
+            os.mkdir(folder_path_decoded)
+        plt.imsave(f"{folder_path_decoded}/data.png", imgs, cmap='terrain')
     return imgs
 
     
 def main():
+    start_processing = timer()
     if not args.decoded_data_path:
         tiles = generate_tiles_from_graph_coordinates(ZOOM, *EUROPE_BOUNDS)
         download_tiles(tiles)
@@ -128,7 +136,10 @@ def main():
     data_reshaped = data.reshape(-1, 1)
     print(f"Starting KMeans algorithm for {len(data)} data points...")
     kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data_reshaped)
+    stop_processing = timer()
     print("Done!")
+    print(f"Time to cluster the data: {stop_processing - start_processing}s for zoom {ZOOM}, "
+          f"decoding data: {not(args.decoded_data_path)}, downloading data: {DOWNLOAD_DATA}.")
 
     labels = kmeans.labels_
     img = labels.reshape(init_shape)
@@ -147,6 +158,7 @@ def main():
     cbar.set_ticklabels([0, 1, 2, 3, 4, 5])
     cbar.set_ticklabels(cluster_centers)
     plt.show()
+    plt.savefig(f"result_{ZOOM}.png", bbox_inches='tight')
 
 if __name__ == '__main__':
     if not os.path.exists(ZOOM_FOLDER):
