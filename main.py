@@ -97,10 +97,10 @@ def concat_vh(list_2d):
     return cv2.hconcat([cv2.vconcat(list_h) for list_h in list_2d]) 
 
 def get_tiles_from_file(decode=True, group=True):
-    column_folder_paths = sorted(glob.glob(f"{ZOOM_FOLDER}/*"), key=len)
+    column_folder_paths = sorted(sorted(glob.glob(f"{ZOOM_FOLDER}/*"), key=len))
     imgs = []
     for c, column_folder in enumerate(column_folder_paths):
-        img_paths = sorted(glob.glob(f"{column_folder}/*.png"), key=len)
+        img_paths = sorted(sorted(glob.glob(f"{column_folder}/*.png"), key=len))
         column_imgs = []
         for r, img_path in enumerate(img_paths):
             print(f"Reading {(r + c*len(img_paths))} img out of {len(column_folder_paths)**2} imgs from {img_path}")
