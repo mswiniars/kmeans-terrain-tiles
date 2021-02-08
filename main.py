@@ -2,6 +2,7 @@ import os
 import glob
 import math
 import argparse
+import time
 from itertools import product
 from timeit import default_timer as timer
 
@@ -13,11 +14,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.cluster import KMeans
 
-
 parser = argparse.ArgumentParser(description='Data analysis of altitude profile in Europe.')
 parser.add_argument('--zoom', metavar='Z', type=int, default=3, help='Zoom ratio of processed data.')
+parser.add_argument('--compute-pyspark', action="store_true", help='Flag enabling computing KMeans algorithm with PySpark.')
 parser.add_argument('--decoded-data-path', metavar="D", type=str, help='Path to already decoded data.')
 args = parser.parse_args()
+
+if args.compute_pyspark:
+    from pyspark.ml.clustering import KMeans as KMeans_pyspark
+    from pyspark.ml.evaluation import ClusteringEvaluator
+    import findspark
+    from pyspark import SparkContext
+    from pyspark import SparkConf
+    from pyspark.sql import SparkSession
+
+
 
 DATA_TYPE = "terrarium"
 EUROPE_BOUNDS = (71.0, -10.0, 35.0, 56.0)
@@ -119,9 +130,55 @@ def get_tiles_from_file(decode=True, group=True):
         plt.imsave(f"{folder_path_decoded}/data.png", imgs, cmap='terrain')
     return imgs
 
-    
+def convert_data_to_txt(reshaped_data, path):
+    """
+    Convert data for pyspark KMeans algorithm.
+    """
+    arrstr = []
+
+    if not os.path.exists(path):
+        for i in range(len(reshaped_data)):
+            resh = str(reshaped_data[i])
+            resh = resh[1:-1]
+            arrstr.append((str(i) + ' 1:' + str(resh) + '\n'))
+
+        with open(path, 'w') as test_file:
+            for line in arrstr:
+                test_file.writelines(line)
+
+def pyspark_kmeans(data_reshaped):
+    """
+    Process pyspark Kmeans algorithm.
+    """
+    src_path = f"./data/{DATA_TYPE}_decoded/{ZOOM}/kmeans_data.txt"
+    print('Preparing data for PySpark algorithm...')
+    convert_data_to_txt(data_reshaped, src_path)
+    print(f"Starting PySpark KMeans algorithm for {data_reshaped.size} data points...")
+    findspark.init()
+    sc=SparkContext(master="local[5]")
+    spark = SparkSession(sc)
+
+    dataset = spark.read.format("libsvm").load(src_path)
+
+    kmeans = KMeans_pyspark().setK(5).setSeed(1)
+    model = kmeans.fit(dataset)
+
+    predictions = model.transform(dataset)
+
+    evaluator = ClusteringEvaluator()
+    silhouette = evaluator.evaluate(predictions)
+    print("Silhouette with squared euclidean distance = " + str(silhouette))
+
+    # Shows the result.
+    centers = model.clusterCenters()
+    print("Cluster Centers: ")
+    for center in centers:
+        print(center)
+
+    sc.stop()
+
 def main():
-    start_processing = timer()
+    start_processing = time.time()
     if not args.decoded_data_path:
         tiles = generate_tiles_from_graph_coordinates(ZOOM, *EUROPE_BOUNDS)
         download_tiles(tiles)
@@ -134,16 +191,23 @@ def main():
 
     init_shape = data.shape
     data_reshaped = data.reshape(-1, 1)
-    print(f"Starting KMeans algorithm for {data.size} data points...")
-    kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data_reshaped)
-    stop_processing = timer()
-    print("Done!")
-    print(f"Time to cluster the data: {stop_processing - start_processing}s for zoom {ZOOM}, "
-          f"decoding data: {not(args.decoded_data_path)}, downloading data: {DOWNLOAD_DATA}.")
 
+    print(f"Starting KMeans algorithm from scikit-learn lib for {data.size} data points...")
+    kmeans = KMeans(n_clusters=5, random_state=0, n_init=10, tol=1e-4).fit(data_reshaped)
     labels = kmeans.labels_
     img = labels.reshape(init_shape)
     cluster_centers = kmeans.cluster_centers_.reshape(-1)
+    stop = time.time()
+    print(f"KMeans algorithm from scikit-learn clustering execution time:: {stop - start_processing}s for zoom {ZOOM}, "
+          f"decoding data: {not (args.decoded_data_path)}, downloading data: {DOWNLOAD_DATA}.")
+
+    # PySpark KMeans algorithm execution
+    if args.compute_pyspark:
+        start = time.time()
+        pyspark_kmeans(data_reshaped)
+        stop = time.time()
+        print('PySpark KMeans clustering execution time:', stop - start)
+    print("Done!")
 
     # Plotting results
     cmap = matplotlib.cm.viridis

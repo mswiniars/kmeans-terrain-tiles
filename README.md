@@ -19,7 +19,7 @@ The measurement system is built as follows:
  | 3 | 15.5s | 6.5s | 
  | 5 | 82.6s | 34.4s |
  | 7 | N/A | 443.20s |
- | 10 | N/A | TBD |
+ | 10 | N/A | N/A |
 
  Example result map for zoom 5:
  ![alt text](https://github.com/mswiniars/kmeans-terrain-tiles/blob/main/results/result_5.png)
